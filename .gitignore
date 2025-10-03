@@ -1,0 +1,13 @@
+# Java / Maven
+target/
+*.log
+
+# IntelliJ
+.idea/
+*.iml
+*.iws
+*.ipr
+out/
+
+# Env files
+.env

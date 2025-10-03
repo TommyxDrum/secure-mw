@@ -1,0 +1,23 @@
+spring:
+  application:
+    name: processor-svc
+  kafka:
+    bootstrap-servers: localhost:9092
+    consumer:
+      group-id: telemetry-processor
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+
+server:
+  port: 8082
+
+app:
+  topics:
+    telemetry: telemetry.v1
+    dlq: telemetry.dlq
+  security:
+    aesKeyB64: ${AES_KEY_B64}
+    hmacKeyB64: ${HMAC_KEY_B64}
+
+    # PROCESSOR
