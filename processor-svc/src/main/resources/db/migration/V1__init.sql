@@ -110,6 +110,3 @@ CREATE TABLE IF NOT EXISTS key_material (
 CREATE INDEX IF NOT EXISTS idx_key_material_status 
     ON key_material(status);
 
--- ============================================================
--- ✅ Fine script
--- ============================================================

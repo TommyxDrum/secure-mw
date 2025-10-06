@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import it.floro.securemw.common.crypto.Crypto;
 import it.floro.securemw.processor_svc.service.PersistenceService;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.kafka.annotation.KafkaListener;
@@ -17,14 +18,18 @@ import java.util.*;
 
 import java.util.concurrent.ConcurrentHashMap;
 
+@Slf4j
 @Component
 public class TelemetryConsumer {
 
-    private final ObjectMapper mapper;               // iniettato da Spring
-    private final Crypto crypto;
+    private final ObjectMapper mapper;
     private final KafkaTemplate<String, String> kafkaTemplate;
-    private final String dlqTopic;
     private final PersistenceService persistence;
+
+    @Value("${app.topics.dlq}")
+    private final String dlqTopic;
+
+    private final Crypto crypto;
 
     // anti-replay (demo in-memory)
     private final Set<String> usedNonces = ConcurrentHashMap.newKeySet();
@@ -46,11 +51,11 @@ public class TelemetryConsumer {
 
     @KafkaListener(topics = "${app.topics.telemetry}", groupId = "${spring.kafka.consumer.group-id}")
     public void onMessage(ConsumerRecord<String, String> record) {
-        String value = record.value();
-        String key = record.key();
-        String topic = record.topic();
-        int partition = record.partition();
-        long offset = record.offset();
+        final String value = record.value();
+        final String key = record.key();
+        final String topic = record.topic();
+        final int partition = record.partition();
+        final long offset = record.offset();
 
         UUID rawId = null;
 
@@ -58,12 +63,12 @@ public class TelemetryConsumer {
             // ----- parse envelope -----
             JsonNode root = mapper.readTree(value);
             ObjectNode meta = (ObjectNode) root.path("meta");
-            ObjectNode sec  = (ObjectNode) root.path("security");
+            ObjectNode sec = (ObjectNode) root.path("security");
             String ciphertextB64 = root.path("ciphertext").asText();
 
-            String ivB64  = sec.path("iv").asText();
+            String ivB64 = sec.path("iv").asText();
             String sigB64 = sec.path("sig").asText();
-            String nonce  = meta.path("nonce").asText();
+            String nonce = meta.path("nonce").asText();
 
             if (!usedNonces.add(nonce)) {
                 throw new IllegalStateException("Replay detected for nonce " + nonce);
@@ -73,10 +78,7 @@ public class TelemetryConsumer {
             ObjectNode headers = null;
 
             // 1) Persisto SEMPRE il messaggio grezzo (audit + id per errori)
-            rawId = persistence.saveRaw(
-                    topic, partition, offset,
-                    meta, sec, ciphertextB64, headers
-            );
+            rawId = persistence.saveRaw(topic, partition, offset, meta, sec, ciphertextB64, headers);
 
             // 2) Verify HMAC su (iv || ciphertext)
             byte[] iv = Base64.getDecoder().decode(ivB64);
@@ -93,9 +95,10 @@ public class TelemetryConsumer {
             String payloadJson = new String(plain, StandardCharsets.UTF_8);
             ObjectNode payload = (ObjectNode) mapper.readTree(payloadJson);
 
-            // 4) Persiste il decodificato
+            // 4) Persisto il decodificato
             String deviceId = meta.path("deviceId").asText();
-            Instant eventTs = Instant.parse(meta.path("ts").asText());
+            String tsStr = meta.path("ts").asText();
+            Instant eventTs = Instant.parse(tsStr); // se non valido, lancia e finisce in processing_errors
 
             persistence.saveDecoded(
                     rawId, deviceId, eventTs,
@@ -104,19 +107,25 @@ public class TelemetryConsumer {
                     true   // auth_ok
             );
 
-            System.out.printf("✅ Decrypted & persisted | key=%s | payload=%s%n", key, payloadJson);
+            log.info("✅ Decrypted & persisted | key={} | payload={}", key, payloadJson);
 
         } catch (Exception ex) {
-            System.out.printf("Security/processing error | topic=%s p=%d off=%d key=%s: %s%n",
+            log.warn("Security/processing error | topic={} p={} off={} key={}: {}",
                     topic, partition, offset, key, ex.getMessage());
 
-            // registro errore collegato al rawId (se disponibile)
             if (rawId != null) {
                 try {
-                    persistence.saveError(rawId, "DECRYPT_OR_VERIFY", "PROCESSING_ERROR",
+                    persistence.saveError(
+                            rawId,
+                            "DECRYPT_OR_VERIFY",
+                            "PROCESSING_ERROR",
                             ex.getClass().getSimpleName() + ": " + ex.getMessage(),
-                            dlqTopic, 1);
-                } catch (Exception ignore) { /* non bloccare il DLQ */ }
+                            dlqTopic,
+                            1
+                    );
+                } catch (Exception ignore) {
+                    // non bloccare il DLQ
+                }
             }
 
             // invio il messaggio grezzo in DLQ

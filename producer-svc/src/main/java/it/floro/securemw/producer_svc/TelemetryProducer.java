@@ -13,8 +13,6 @@ import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
 
 
-
-
 @Component
 public class TelemetryProducer {
 

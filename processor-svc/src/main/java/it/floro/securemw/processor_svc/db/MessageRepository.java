@@ -1,7 +1,8 @@
 package it.floro.securemw.processor_svc.db;
 
 
-import lombok.AllArgsConstructor;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -9,13 +10,12 @@ import org.springframework.stereotype.Repository;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.UUID;
+
 import org.postgresql.util.PGobject;
-import org.postgresql.util.PGobject;
 
-
-
+@Slf4j
 @Repository
-@AllArgsConstructor
+@RequiredArgsConstructor
 public class MessageRepository {
     private final NamedParameterJdbcTemplate jdbc;
 
@@ -29,7 +29,7 @@ public class MessageRepository {
             obj.setValue(json);
             return obj;
         } catch (Exception e) {
-            throw new RuntimeException("Invalid JSON for jsonb param", e);
+            throw new IllegalArgumentException("Invalid JSON for jsonb param", e);
         }
     }
 
@@ -42,13 +42,12 @@ public class MessageRepository {
                           String securityJson,
                           String ciphertextB64,
                           String headersJson) {
-
-        // NB: "partition" e "offset" sono parole chiave in SQL, quindi le cito.
+        // NB: "partition" e "offset" vanno citate.
         final String sql = """
-            INSERT INTO messages_raw(topic, "partition", "offset", meta, security, ciphertext_b64, headers)
-            VALUES (:topic, :partition, :offset, :meta, :security, :ciphertext, :headers)
-            RETURNING id
-            """;
+                INSERT INTO messages_raw(topic, "partition", "offset", meta, security, ciphertext_b64, headers)
+                VALUES (:topic, :partition, :offset, :meta, :security, :ciphertext, :headers)
+                RETURNING id
+                """;
 
         var params = new MapSqlParameterSource()
                 .addValue("topic", topic)
@@ -71,21 +70,19 @@ public class MessageRepository {
                               String payloadJson,
                               boolean integrityOk,
                               boolean authOk) {
-
         String sql = """
-        INSERT INTO messages_decoded
-            (id, device_id, event_ts, processed_at, meta, payload, integrity_ok, auth_ok)
-        VALUES
-            (:id, :deviceId, :eventTs, now(), :meta, :payload, :integrityOk, :authOk)
-        ON CONFLICT (id) DO NOTHING
-        """;
+                INSERT INTO messages_decoded
+                    (id, device_id, event_ts, processed_at, meta, payload, integrity_ok, auth_ok)
+                VALUES
+                    (:id, :deviceId, :eventTs, now(), :meta, :payload, :integrityOk, :authOk)
+                ON CONFLICT (id) DO NOTHING
+                """;
 
         MapSqlParameterSource ps = new MapSqlParameterSource()
                 .addValue("id", id)
                 .addValue("deviceId", deviceId)
-                // meglio convertire esplicitamente a Timestamp (timestamptz in tabella)
                 .addValue("eventTs", Timestamp.from(eventTs))
-                .addValue("meta",    jsonbOrNull(metaJson))
+                .addValue("meta", jsonbOrNull(metaJson))
                 .addValue("payload", jsonbOrNull(payloadJson))
                 .addValue("integrityOk", integrityOk)
                 .addValue("authOk", authOk);
@@ -101,11 +98,10 @@ public class MessageRepository {
                             String msg,
                             String dlqTopic,
                             int attempts) {
-
         final String sql = """
-            INSERT INTO processing_errors(raw_id, stage, error_code, error_msg, dlq_topic, attempts)
-            VALUES (:rawId, :stage, :code, :msg, :dlq, :attempts)
-            """;
+                INSERT INTO processing_errors(raw_id, stage, error_code, error_msg, dlq_topic, attempts)
+                VALUES (:rawId, :stage, :code, :msg, :dlq, :attempts)
+                """;
 
         var params = new MapSqlParameterSource()
                 .addValue("rawId", rawId)
