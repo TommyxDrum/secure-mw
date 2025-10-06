@@ -22,7 +22,6 @@ services:
       - "9644:9644"   # Admin API
     environment:
       - REDPANDA_AUTO_CREATE_TOPICS=true
-    restart: unless-stopped
 
   console:
     image: redpandadata/console:latest
@@ -33,39 +32,3 @@ services:
       - KAFKA_BROKERS=redpanda:9092
     depends_on:
       - redpanda
-
-  postgres:
-    image: postgres:16.3-alpine
-    container_name: postgres
-    environment:
-      POSTGRES_USER: securemw
-      POSTGRES_PASSWORD: securemw
-      POSTGRES_DB: securemw
-    ports:
-      - "5432:5432"
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U securemw -d securemw"]
-      interval: 5s
-      timeout: 3s
-      retries: 20
-      start_period: 5s
-
-  pgadmin:
-    image: dpage/pgadmin4:8.12
-    container_name: pgadmin
-    environment:
-      PGADMIN_DEFAULT_EMAIL: tommaso_floro@libero.com
-      PGADMIN_DEFAULT_PASSWORD: admin
-    ports:
-      - "5050:80"
-    depends_on:
-      postgres:
-        condition: service_healthy
-    volumes:
-      - pgadmin_data:/var/lib/pgadmin
-
-volumes:
-  pgdata:
-  pgadmin_data:

@@ -1,0 +1,87 @@
+Persistenza dei dati
+
+Un aspetto centrale del middleware sviluppato riguarda la gestione persistente dei messaggi, necessaria per garantire tracciabilità, resilienza operativa e possibilità di analisi a posteriori delle comunicazioni tra i sistemi.
+Per implementare questa componente è stata realizzata un’integrazione tra Spring Boot, PostgreSQL e script SQL di inizializzazione, così da ottenere una soluzione robusta, scalabile e facilmente replicabile in diversi ambienti.
+
+Scelta del database
+
+Per la persistenza è stato scelto PostgreSQL, eseguito all’interno di un container Docker dedicato.
+La scelta è motivata da diversi fattori:
+
+Affidabilità e maturità di PostgreSQL come database relazionale open-source.
+
+Compatibilità nativa con Spring Boot e con i principali strumenti Java.
+
+Supporto nativo JSONB, che consente di combinare dati strutturati (colonne tradizionali) con dati semi-strutturati (payload cifrati e metadati), senza imporre schemi troppo rigidi.
+
+Capacità analitiche avanzate, con possibilità di eseguire query complesse e indicizzate anche su campi JSON.
+
+Il database viene avviato tramite docker-compose, impostando le variabili d’ambiente relative a utente, password e nome del database. L’applicazione Spring Boot comunica con il DB tramite JDBC, collegandosi alla porta 5432 esposta dal container.
+
+Inizializzazione dello schema
+
+Invece di utilizzare un sistema di migrazione automatica come Flyway (non pienamente compatibile con la versione moderna di PostgreSQL adottata), è stato scelto di gestire lo schema tramite uno script SQL di inizializzazione eseguito direttamente da Spring Boot all’avvio dell’applicazione.
+
+Lo script, denominato V1__init.sql ed inserito nella directory src/main/resources/db/migration/, definisce la struttura completa della base dati necessaria al middleware:
+
+messages_raw
+Contiene i messaggi ricevuti dal broker così come arrivano (payload cifrato, metadati, firme). Serve per garantire audit e possibilità di replay.
+
+messages_decoded
+Contiene i messaggi dopo la verifica dell’integrità e la decifratura, rappresentando la “vista applicativa” dei dati.
+
+processing_errors
+Traccia eventuali errori avvenuti nelle fasi di verifica, decifratura o persistenza, supportando scenari di retry e dead-letter queue.
+
+device_registry (opzionale)
+Gestisce informazioni anagrafiche e di policy sui dispositivi autorizzati.
+
+key_material (opzionale)
+Memorizza metadati sulle chiavi crittografiche utilizzate (non le chiavi reali), utile per gestire scenari di rotazione chiavi.
+
+Sono stati inoltre creati indici B-tree e GIN per ottimizzare le query sui timestamp, sugli ID dei dispositivi e sui campi JSONB.
+
+Spring Boot è configurato per eseguire automaticamente questo script all’avvio, attraverso la funzionalità spring.sql.init. Se il database è vuoto, tutte le tabelle e gli indici vengono creati in automatico senza intervento manuale.
+
+Integrazione con Spring Boot
+
+Nel modulo processor-svc sono state aggiunte le dipendenze Maven necessarie:
+
+spring-boot-starter-data-jdbc per l’interazione con il database tramite JDBC;
+
+org.postgresql:postgresql come driver del database.
+
+La connessione al database è configurata nel file application.yml, con il supporto per variabili d’ambiente, così da poter differenziare facilmente tra ambienti locali, containerizzati e futuri ambienti di produzione.
+Durante l’avvio, Spring Boot apre la connessione tramite HikariCP e applica lo script SQL, inizializzando lo schema se necessario.
+
+Logica di persistenza
+
+All’interno del consumer Kafka (TelemetryConsumer), è stata integrata la logica di persistenza con la seguente pipeline:
+
+Persistenza del messaggio grezzo
+Ogni messaggio ricevuto viene registrato nella tabella messages_raw prima di qualsiasi elaborazione, garantendo idempotenza e la possibilità di rielaborare messaggi in caso di errori.
+
+Verifica e decifratura
+Il payload cifrato viene verificato e decifrato, estraendo i dati originali e validandone l’integrità.
+
+Persistenza del messaggio decodificato
+Il messaggio verificato e decifrato viene inserito nella tabella messages_decoded, includendo informazioni crittografiche e timestamp applicativi.
+
+Gestione errori
+Eventuali errori riscontrati nelle fasi precedenti vengono registrati nella tabella processing_errors, permettendo analisi successive, retry e l’adozione di strategie di Dead Letter Queue.
+
+L’accesso al database avviene tramite NamedParameterJdbcTemplate, per mantenere il pieno controllo sulle query SQL, pur beneficiando della gestione connessioni e transazioni di Spring.
+
+Vantaggi ottenuti
+
+Questa soluzione ha permesso di ottenere risultati importanti nel contesto industriale simulato:
+
+Tracciabilità completa delle comunicazioni, conservando sia il messaggio originale sia quello decodificato.
+
+Audit e sicurezza, con possibilità di dimostrare a posteriori l’integrità dei messaggi memorizzati.
+
+Resilienza operativa, grazie alla possibilità di rielaborare messaggi persi o falliti.
+
+Scalabilità, grazie al supporto JSONB e agli indici PostgreSQL.
+
+Semplicità di deploy, eliminando dipendenze da tool esterni di migrazione e sfruttando lo schema SQL direttamente integrato nel ciclo di avvio dell’applicazione.
