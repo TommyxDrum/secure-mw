@@ -1,4 +1,4 @@
-package it.floro.securemw.producer_svc.crypto;
+package it.floro.securemw.common.crypto;
 
 import javax.crypto.Cipher;
 import javax.crypto.Mac;
@@ -23,7 +23,7 @@ public class Crypto {
 
     /**
      * @param aesKeyB64  chiave AES (32 byte → 256 bit) codificata Base64
-     * @param hmacKeyB64 chiave HMAC (32 byte consigliati) codificata Base64
+     * @param hmacKeyB64 chiave HMAC (32 byte) codificata Base64
      */
     public Crypto(String aesKeyB64, String hmacKeyB64) {
         byte[] aes = Base64.getDecoder().decode(Objects.requireNonNull(aesKeyB64, "aesKeyB64 null"));
@@ -40,11 +40,9 @@ public class Crypto {
         this.hmacKey = new SecretKeySpec(hmk, "HmacSHA256");
     }
 
-    /* =========================
-       ========  HMAC  =========
-       ========================= */
+    //HMAC
 
-    /** Calcola HMAC-SHA256 su data. */
+    // Calcola HMAC-SHA256 su data.
     public byte[] sign(byte[] data) {
         try {
             Mac mac = Mac.getInstance("HmacSHA256");
@@ -55,7 +53,7 @@ public class Crypto {
         }
     }
 
-    /** Verifica HMAC-SHA256; solleva eccezione se non coincide. */
+    //Verifica HMAC-SHA256; solleva eccezione se non coincide.
     public void verifyHmac(byte[] data, byte[] expectedSig) {
         byte[] actual = sign(data);
         if (!constantTimeEquals(actual, expectedSig)) {
@@ -63,25 +61,23 @@ public class Crypto {
         }
     }
 
-    /* =========================
-       ========  AES  ==========
-       ========================= */
+    //AES
 
-    /** Genera un IV casuale da 12 byte (raccomandazione NIST per GCM). */
+    // Genera un IV casuale da 12 byte (raccomandazione NIST per GCM).
     public byte[] newIv() {
         byte[] iv = new byte[GCM_IV_LEN];
         rng.nextBytes(iv);
         return iv;
     }
 
-    /** Cifra con IV casuale; ritorna iv + ciphertext in un contenitore. */
+    //Cifra con IV casuale; ritorna iv + ciphertext in un contenitore.
     public EncResult encrypt(byte[] plaintext) {
         byte[] iv = newIv();
         byte[] ct = encrypt(iv, plaintext);
         return new EncResult(iv, ct);
     }
 
-    /** Cifra con IV fornito (12 byte). */
+    // Cifra con IV fornito (12 byte).
     public byte[] encrypt(byte[] iv, byte[] plaintext) {
         try {
             if (iv == null || iv.length != GCM_IV_LEN) {
@@ -96,7 +92,7 @@ public class Crypto {
         }
     }
 
-    /** Decifra (richiede IV usato in cifratura e il ciphertext completo di tag GCM). */
+    // Decifra (richiede IV usato in cifratura e il ciphertext completo di tag GCM).
     public byte[] decrypt(byte[] iv, byte[] ciphertext) {
         try {
             if (iv == null || iv.length != GCM_IV_LEN) {
@@ -111,9 +107,7 @@ public class Crypto {
         }
     }
 
-    /* =========================
-       ======  Utility  ========
-       ========================= */
+    //Utility
 
     public static String b64(byte[] data) {
         return Base64.getEncoder().encodeToString(data);
@@ -158,6 +152,5 @@ public class Crypto {
         public Map<String,String> encryptAndSign(String plaintextUtf8) {
             return encryptAndSign(plaintextUtf8.getBytes(StandardCharsets.UTF_8));
         }
-
 }
 
